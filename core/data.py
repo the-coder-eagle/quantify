@@ -369,7 +369,8 @@ def _fetch_sina_snapshot(min_price, max_price=None):
     df = df.rename(columns={k: v for k, v in _SINA_COL_MAP.items() if k in df.columns})
 
     # Clean numeric columns
-    for c in ["price", "pct_chg", "change", "volume", "turnover", "open", "prev_close", "high", "low"]:
+    for c in ["price", "pct_chg", "change", "volume", "turnover", "open", "prev_close",
+              "high", "low", "pe_ttm", "pb", "total_mv", "circ_mv", "turnover_rate", "volume_ratio"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
@@ -535,7 +536,7 @@ def fetch_fund_flow(code: str) -> dict | None:
     code = str(code).zfill(6)
     try:
         import akshare as ak
-        prefix = "sh" if code[0] in "569" else "sz"
+        prefix = "sh" if code[0] in "569" else "sz" if code[0] in "0123" else "sh"
         df = ak.stock_individual_fund_flow(stock=code, market=prefix)
         if df is None or df.empty:
             return None
@@ -560,57 +561,22 @@ def fetch_fund_flow(code: str) -> dict | None:
 def fetch_industry_info(code: str) -> dict | None:
     """Get stock industry/board classification.
 
-    Uses ak.stock_board_industry_summary_ths for industry names
-    and ak.stock_board_concept_ths for concept tags.
-    Returns dict with industry name and list of concept tags.
+    Lightweight stub — full industry classification is computed in the
+    factor pipeline (scheduler) and cached, not fetched per-stock here.
     """
     code = str(code).zfill(6)
     try:
         import akshare as ak
 
-        # Fetch industry summary
-        df_industry = ak.stock_board_industry_summary_ths()
-        if df_industry is not None and not df_industry.empty:
-            # Get all industry names from the board list
-            industries = df_industry["板块"].tolist()
-        else:
-            industries = []
+        result = {"industry_name": "unknown", "concept_tags": [], "source": "ths"}
 
-        result = {"industry_name": "unknown", "concept_tags": []}
-
-        # Try to find stock's specific industry via board concept stocks
+        # One-shot: fetch industry board list (doesn't need per-stock API calls)
         try:
-            for board_name in industries[:20]:  # Limit to avoid rate-limiting
-                try:
-                    df_concept = ak.stock_board_industry_cons_ths(symbol=board_name)
-                    if df_concept is not None and not df_concept.empty:
-                        code_col = df_concept.columns[1] if len(df_concept.columns) > 1 else df_concept.columns[0]
-                        if code in df_concept[code_col].astype(str).values:
-                            result["industry_name"] = board_name
-                            result["source"] = "ths"
-                            break
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-        # Fetch concept board info for concept tags
-        try:
-            df_concepts = ak.stock_board_concept_ths()
-            if df_concepts is not None and not df_concepts.empty and "板块" in df_concepts.columns:
-                concept_board_names = df_concepts["板块"].tolist()
-                tags = []
-                for board_name in concept_board_names[:20]:
-                    try:
-                        df_cons = ak.stock_board_concept_cons_ths(symbol=board_name)
-                        if df_cons is not None and not df_cons.empty:
-                            code_col = df_cons.columns[1] if len(df_cons.columns) > 1 else df_cons.columns[0]
-                            if code in df_cons[code_col].astype(str).values:
-                                tags.append(board_name)
-                    except Exception:
-                        continue
-                if tags:
-                    result["concept_tags"] = tags
+            df_industry = ak.stock_board_industry_summary_ths()
+            if df_industry is not None and not df_industry.empty:
+                # Industry data available but per-stock mapping requires
+                # the factor pipeline cross-section.  Mark as available.
+                result["source"] = "ths_available"
         except Exception:
             pass
 

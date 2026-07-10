@@ -144,7 +144,7 @@ def compute_quality_factors(code: str) -> dict:
 def compute_volatility_factors(close: pd.Series) -> dict:
     """20D vol, 60D vol, vol ratio."""
     factors = {}
-    rets = close.pct_change(fill_method=None).dropna()
+    rets = close.pct_change().dropna()
 
     if len(rets) >= 20:
         vol_20 = float(rets.tail(20).std() * np.sqrt(252))

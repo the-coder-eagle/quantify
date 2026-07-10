@@ -40,9 +40,9 @@ STRATEGIES = ALL_STRATEGIES
 REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "reports")
 
 
-def analyze_one(df):
+def analyze_one(df, code=""):
     """Run all strategies on one stock."""
-    return analyze_stock(df, CAPITAL, RISK_PCT)
+    return analyze_stock(df, CAPITAL, RISK_PCT, code=code)
 
 
 def generate_report(report_date=None):
@@ -64,7 +64,7 @@ def generate_report(report_date=None):
         try:
             df = dm.get(code, start_str, end_str)
             if isinstance(df, pd.DataFrame) and len(df) >= 60:
-                info = analyze_one(df)
+                info = analyze_one(df, code)
                 info["code"] = code
                 info["name"] = STOCK_NAMES.get(code, "?")
                 results.append(info)

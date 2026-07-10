@@ -196,7 +196,7 @@ def _load_or_init_ic() -> dict[str, float]:
         "rsi_deviation": 0.03, "macd_hist": 0.03, "bb_position": 0.02,
         "ma20_slope": 0.03, "volume_ratio": 0.02,
         "margin_balance": 0.02, "margin_buy": 0.02,
-        "main_net_inflow_pct": 0.03,
+        "main_net_inflow": 0.03, "super_large_net_inflow": 0.02,
     }
 
 

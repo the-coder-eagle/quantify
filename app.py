@@ -100,7 +100,8 @@ def analyze(code):
 
     info = analyze_stock(df, CAPITAL, RISK_PCT,
                          strategy_overrides=overrides,
-                         strategy_weights=weights)
+                         strategy_weights=weights,
+                         code=code)
     if info is None:
         return None
     info["code"] = code
