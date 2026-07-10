@@ -9,7 +9,7 @@ from .backtest import oos_quality_check
 
 def analyze_stock(df, capital=100_000, risk_pct=0.02,
                   strategy_overrides=None, strategy_weights=None,
-                  oos_check=False):
+                  oos_check=False, code=""):
     """Run full analysis on a stock DataFrame.
 
     Args:
@@ -22,6 +22,7 @@ def analyze_stock(df, capital=100_000, risk_pct=0.02,
             e.g. {"趋势-均线": 0.3, "趋势-MACD": 0.25, ...}
             When provided, votes are weighted instead of equal-weighted.
         oos_check: If True, run out-of-sample quality check on each strategy.
+        code: Stock code (e.g. "600519"). Used to look up factor ranking.
 
     Returns dict with signal, confidence, strategy votes, regime info,
     position sizing, and indicator values.  Returns None if data insufficient.
@@ -124,4 +125,23 @@ def analyze_stock(df, capital=100_000, risk_pct=0.02,
     }
     if oos_check:
         result["oos"] = oos_results
+
+    # ── Factor-based scoring (new) ──
+    # Try loading ranking snapshot, fall back to strategy voting
+    factor_score = None
+    percentile = None
+    try:
+        from .cross_section import load_latest_ranking
+        ranking = load_latest_ranking()
+        if ranking is not None and code in ranking["code"].values:
+            row = ranking[ranking["code"] == code].iloc[0]
+            factor_score = row.get("score")
+            percentile = row.get("percentile")
+    except Exception:
+        pass
+
+    if factor_score is not None:
+        result["factor_score"] = round(factor_score, 4)
+        result["percentile"] = round(percentile, 4) if percentile is not None else None
+
     return result
