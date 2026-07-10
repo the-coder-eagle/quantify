@@ -187,16 +187,19 @@ def _load_or_init_ic() -> dict[str, float]:
             return json.load(f)
     # Default equal IC weights for all factor groups
     return {
-        "ep_ratio": 0.03, "bp_ratio": 0.03,
+        "ep_ratio": 0.03, "bp_ratio": 0.03, "ps_proxy": 0.02,
         "mom_1m": 0.04, "mom_3m": 0.05, "mom_6m": 0.05, "mom_12m": 0.04,
-        "roe": 0.05, "gross_margin": 0.03, "debt_ratio": 0.02,
+        "mom_1m_ex5d": 0.03,
+        "roe": 0.05, "gross_margin": 0.03, "debt_ratio": 0.02, "eps": 0.04,
         "vol_20d": 0.03, "vol_60d": 0.02, "vol_ratio": 0.02,
         "ln_circ_mv": 0.04, "ln_total_mv": 0.03,
-        "north_hold_pct": 0.05, "north_hold_mv": 0.04,
-        "rsi_deviation": 0.03, "macd_hist": 0.03, "bb_position": 0.02,
+        "north_hold_pct": 0.05, "north_hold_shares": 0.03, "north_hold_mv": 0.04,
+        "rsi_deviation": 0.03, "macd_hist": 0.03, "macd_above_signal": 0.03,
+        "bb_position": 0.02, "bb_width": 0.02,
         "ma20_slope": 0.03, "volume_ratio": 0.02,
         "margin_balance": 0.02, "margin_buy": 0.02,
         "main_net_inflow": 0.03, "super_large_net_inflow": 0.02,
+        "news_sentiment": 0.02,
     }
 
 
