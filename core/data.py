@@ -384,3 +384,56 @@ def _fetch_sina_snapshot(min_price, max_price=None):
     if "turnover" in df.columns:
         df = df.sort_values("turnover", ascending=False)
     return df
+
+
+def fetch_north_bound_individual(code: str) -> dict | None:
+    """Fetch north-bound holding for a single stock.
+
+    Returns dict with keys: hold_pct, hold_shares, hold_mv,
+    or None on failure.
+    """
+    code = str(code).zfill(6)
+    try:
+        import akshare as ak
+        df = ak.stock_hsgt_individual_em(symbol=code)
+        if df is None or df.empty:
+            return None
+        # The API returns historical data; take the latest row
+        latest = df.iloc[-1]
+        cols = df.columns.tolist()
+        result = {"created_at": str(pd.Timestamp.now())}
+
+        # Map by column position (API is stable in column order)
+        if len(cols) >= 4:
+            result["hold_pct"] = float(latest.iloc[-4]) if len(cols) >= 4 else None
+            result["hold_shares"] = float(latest.iloc[-3]) if len(cols) >= 3 else None
+            result["hold_mv"] = float(latest.iloc[-2]) if len(cols) >= 2 else None
+        return {k: v for k, v in result.items() if v is not None} if len(result) > 1 else None
+    except Exception:
+        return None
+
+
+def fetch_north_bound_history(market: str = "沪股通") -> pd.DataFrame | None:
+    """Fetch aggregate north-bound flow history.
+
+    Args:
+        market: '沪股通' or '深股通'
+
+    Returns DataFrame with 'date' and 'net_inflow' columns, or None on failure.
+    """
+    try:
+        import akshare as ak
+        df = ak.stock_hsgt_hist_em(symbol=market)
+        if df is None or df.empty:
+            return None
+        # Standardize columns
+        df = df.rename(columns={
+            df.columns[0]: "date",
+            df.columns[-1]: "net_inflow",
+        })
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.set_index("date").sort_index()
+        return df
+    except Exception:
+        return None
