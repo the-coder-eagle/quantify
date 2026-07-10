@@ -458,6 +458,152 @@ def fetch_margin_data(code: str) -> dict | None:
         return None
 
 
+def fetch_financial_indicators(code: str) -> dict | None:
+    """Fetch ROE, gross margin, debt ratio, operating CF from financial reports.
+
+    Uses ak.stock_financial_analysis_indicator. Returns dict with
+    roe, gross_margin, debt_ratio, eps keys, or None on failure.
+    """
+    code = str(code).zfill(6)
+    try:
+        import akshare as ak
+        df = ak.stock_financial_analysis_indicator(symbol=code, start_year="2024")
+        if df is None or df.empty:
+            return None
+
+        latest = df.iloc[0]
+        cols = df.columns.tolist()
+
+        result = {}
+
+        # ROE: 加权净资产收益率 (weighted ROE)
+        roe_cols = [c for c in cols if "加权净资产收益率" in str(c)]
+        if roe_cols:
+            result["roe"] = float(latest[roe_cols[0]])
+
+        # Gross margin: 销售毛利率
+        gm_cols = [c for c in cols if "销售毛利率" in str(c)]
+        if gm_cols:
+            result["gross_margin"] = float(latest[gm_cols[0]])
+
+        # Debt ratio: 资产负债率
+        debt_cols = [c for c in cols if "资产负债率" in str(c)]
+        if debt_cols:
+            result["debt_ratio"] = float(latest[debt_cols[0]])
+
+        # EPS: 每股收益
+        eps_cols = [c for c in cols if "扣除非经常性损益后的每股收益" in str(c)]
+        if eps_cols:
+            result["eps"] = float(latest[eps_cols[0]])
+
+        # Operating CF per share: 每股经营性现金流
+        ocf_cols = [c for c in cols if "每股经营性现金流" in str(c)]
+        if ocf_cols:
+            result["operating_cf_ratio"] = float(latest[ocf_cols[0]])
+
+        if not result:
+            return None
+
+        result["data_date"] = str(latest[cols[0]]) if cols else "unknown"
+        result["frequency"] = "quarterly"
+        return result
+    except Exception:
+        return None
+
+
+def fetch_fund_flow(code: str) -> dict | None:
+    """Fetch institutional fund flow for a stock.
+
+    Uses ak.stock_individual_fund_flow. Returns dict with
+    main_net_inflow_pct, super_large_net_inflow_pct, or None on failure.
+    """
+    code = str(code).zfill(6)
+    try:
+        import akshare as ak
+        prefix = "sh" if code[0] in "569" else "sz"
+        df = ak.stock_individual_fund_flow(stock=code, market=prefix)
+        if df is None or df.empty:
+            return None
+
+        latest = df.iloc[0]
+        cols = df.columns.tolist()
+
+        result = {}
+        # 主力净流入-净占比 (position 4 typically)
+        if len(cols) >= 5:
+            result["main_net_inflow_pct"] = float(latest.iloc[4])
+        # 超大单净流入-净占比 (position 6 typically)
+        if len(cols) >= 7:
+            result["super_large_net_inflow_pct"] = float(latest.iloc[6])
+
+        result["created_at"] = str(latest[cols[0]])
+        return result if result else None
+    except Exception:
+        return None
+
+
+def fetch_industry_info(code: str) -> dict | None:
+    """Get stock industry/board classification.
+
+    Uses ak.stock_board_industry_summary_ths for industry names
+    and ak.stock_board_concept_ths for concept tags.
+    Returns dict with industry name and list of concept tags.
+    """
+    code = str(code).zfill(6)
+    try:
+        import akshare as ak
+
+        # Fetch industry summary
+        df_industry = ak.stock_board_industry_summary_ths()
+        if df_industry is not None and not df_industry.empty:
+            # Get all industry names from the board list
+            industries = df_industry["板块"].tolist()
+        else:
+            industries = []
+
+        result = {"industry": "unknown", "concept_tags": []}
+
+        # Try to find stock's specific industry via board concept stocks
+        try:
+            for board_name in industries[:20]:  # Limit to avoid rate-limiting
+                try:
+                    df_concept = ak.stock_board_industry_cons_ths(symbol=board_name)
+                    if df_concept is not None and not df_concept.empty:
+                        code_col = df_concept.columns[1] if len(df_concept.columns) > 1 else df_concept.columns[0]
+                        if code in df_concept[code_col].astype(str).values:
+                            result["industry"] = board_name
+                            result["source"] = "ths"
+                            break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Fetch concept board info for concept tags
+        try:
+            df_concepts = ak.stock_board_concept_ths()
+            if df_concepts is not None and not df_concepts.empty and "板块" in df_concepts.columns:
+                concept_board_names = df_concepts["板块"].tolist()
+                tags = []
+                for board_name in concept_board_names[:20]:
+                    try:
+                        df_cons = ak.stock_board_concept_cons_ths(symbol=board_name)
+                        if df_cons is not None and not df_cons.empty:
+                            code_col = df_cons.columns[1] if len(df_cons.columns) > 1 else df_cons.columns[0]
+                            if code in df_cons[code_col].astype(str).values:
+                                tags.append(board_name)
+                    except Exception:
+                        continue
+                if tags:
+                    result["concept_tags"] = tags
+        except Exception:
+            pass
+
+        return result
+    except Exception:
+        return {"industry": "unknown", "source": "fallback"}
+
+
 def fetch_north_bound_history(market: str = "沪股通") -> pd.DataFrame | None:
     """Fetch aggregate north-bound flow history.
 

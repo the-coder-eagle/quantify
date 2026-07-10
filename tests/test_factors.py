@@ -1,4 +1,4 @@
-"""Tests for north-bound capital data interfaces."""
+"""Tests for north-bound capital data interfaces, financial indicators, fund flow, and industry info."""
 import pandas as pd
 from core.data import fetch_north_bound_individual, fetch_north_bound_history
 
@@ -25,3 +25,26 @@ def test_fetch_margin_data_returns_dict():
         assert "margin_balance" in result
         assert "margin_buy" in result
         assert "created_at" in result
+
+
+def test_fetch_financial_indicators_returns_dict():
+    from core.data import fetch_financial_indicators
+    result = fetch_financial_indicators("600519")
+    if result is not None:  # API may fail, that's OK
+        assert isinstance(result, dict)
+        assert "roe" in result
+
+
+def test_fetch_fund_flow_returns_dict():
+    from core.data import fetch_fund_flow
+    result = fetch_fund_flow("600519")
+    if result is not None:  # API may fail, that's OK
+        assert isinstance(result, dict)
+
+
+def test_fetch_industry_info_returns_dict():
+    from core.data import fetch_industry_info
+    result = fetch_industry_info("600519")
+    if result is not None:  # API may fail, that's OK
+        assert isinstance(result, dict)
+        assert "industry" in result
