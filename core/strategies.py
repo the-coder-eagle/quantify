@@ -1,4 +1,10 @@
-"""Strategies — trend, momentum, reversion, volume. All in one file."""
+"""
+Strategies — trend, momentum, reversion, volume. All in one file.
+
+.. deprecated::
+    The classes in this module are legacy wrappers. New code should use
+    ``core.factors.compute_technical_factors()`` instead.
+"""
 from abc import ABC, abstractmethod
 import pandas as pd, numpy as np
 from .indicators import sma, ema, rsi, macd, bollinger_bands, atr
