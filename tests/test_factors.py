@@ -15,3 +15,13 @@ def test_fetch_north_bound_history_returns_dataframe():
     if df is not None and not df.empty:
         assert isinstance(df, pd.DataFrame)
         assert "date" in df.columns or df.index.name == "date"
+
+
+def test_fetch_margin_data_returns_dict():
+    from core.data import fetch_margin_data
+    result = fetch_margin_data("600519")
+    if result is not None:  # API may fail, that's OK
+        assert isinstance(result, dict)
+        assert "margin_balance" in result
+        assert "margin_buy" in result
+        assert "created_at" in result

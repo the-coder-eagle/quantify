@@ -413,6 +413,51 @@ def fetch_north_bound_individual(code: str) -> dict | None:
         return None
 
 
+def fetch_margin_data(code: str) -> dict | None:
+    """Fetch margin trading data for a single stock.
+
+    Tries SSE first, then SZSE. Returns dict with:
+      margin_balance: recent margin balance (元)
+      margin_buy: recent margin buy amount (元)
+      short_balance: short selling balance (元)
+      created_at: timestamp
+    """
+    code = str(code).zfill(6)
+    try:
+        import akshare as ak
+
+        for fetch_fn in [ak.stock_margin_detail_sse, ak.stock_margin_detail_szse]:
+            try:
+                df = fetch_fn(date=date.today().strftime("%Y%m%d"))
+                if df is not None and not df.empty:
+                    num_cols = len(df.columns)
+                    if num_cols == 9:  # SSE: date, code, name, bal, buy, short_vol, short_sell, short_bal, total
+                        code_col = df.columns[1]
+                        margin_balance_idx = 3
+                        margin_buy_idx = 4
+                        short_balance_idx = 7
+                    else:  # SZSE (8 cols): code, name, buy, bal, short_vol, short_qty, short_bal, total
+                        code_col = df.columns[0]
+                        margin_balance_idx = 3
+                        margin_buy_idx = 2
+                        short_balance_idx = 6
+
+                    stock_rows = df[df[code_col].astype(str) == code]
+                    if not stock_rows.empty:
+                        row = stock_rows.iloc[0]
+                        return {
+                            "margin_balance": float(row.iloc[margin_balance_idx]),
+                            "margin_buy": float(row.iloc[margin_buy_idx]),
+                            "short_balance": float(row.iloc[short_balance_idx]),
+                            "created_at": str(pd.Timestamp.now()),
+                        }
+            except Exception:
+                continue
+        return None
+    except Exception:
+        return None
+
+
 def fetch_north_bound_history(market: str = "沪股通") -> pd.DataFrame | None:
     """Fetch aggregate north-bound flow history.
 
