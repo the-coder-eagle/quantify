@@ -1,0 +1,77 @@
+# Quantify v4 — Configuration
+# All settings in one place. Loaded by config/__init__.py
+
+# ===== App Defaults =====
+app:
+  capital: 1200.0                # CNY (大学生小额资金)
+  risk_pct: 0.02                 # 2% per trade
+  max_price: 12.0                # max affordable: capital / 100 shares
+  min_price: 2.0                 # filter penny stocks
+  scan_default: 500              # default scan count
+
+# ===== Watchlist =====
+watchlist:
+  default:
+    - "000001"   # 平安银行
+    - "600036"   # 招商银行
+    - "000858"   # 五粮液
+    - "600519"   # 贵州茅台
+    - "000333"   # 美的集团
+    - "600900"   # 长江电力
+
+# ===== Trading Account =====
+account:
+  initial_capital: 1200.0        # CNY (与 app.capital 保持一致)
+  risk_per_trade: 0.02           # 2% per trade
+  default_stop_loss_pct: 0.05    # 5% default stop
+  # For research/daily_report, override to a larger capital:
+  research_capital: 100000.0
+
+# ===== A-share Costs =====
+costs:
+  commission_rate: 0.0003        # 万三
+  min_commission: 5.0            # 最低5元
+  stamp_duty_rate: 0.001         # 千一(卖方)
+  slippage_rate: 0.001           # 0.1%
+
+# ===== AI (DeepSeek) =====
+ai:
+  provider: "deepseek"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"         # deepseek-chat or deepseek-reasoner
+  api_key: ""                    # sk-xxxxx (fill in your key)
+
+# ===== Data =====
+data:
+  cache_dir: "data_cache/daily"
+  adjust: "qfq"                  # 前复权
+
+# ===== Market Regime Detection =====
+regime:
+  vol_change_high: 1.5           # 20-day vol > 1.5x 60-day vol → high_volatility
+  vol_change_low: 0.7            # 20-day vol < 0.7x 60-day vol → potential low_volatility
+  ret_threshold_low_vol: 0.03    # |20-day return| < 3% in low vol → confirm low_volatility
+
+# ===== Optimizer =====
+optimizer:
+  top_n_stocks: 50
+  lookback_days: 250
+  min_data_days: 60
+  score_weights:
+    sharpe: 0.4
+    max_dd: 0.3
+    win_rate: 0.2
+    profit_factor: 0.1
+
+# ===== Ensemble Weights =====
+ensemble:
+  window_days: 20
+  temperature: 2.0
+  min_weight: 0.05
+
+# ===== AI Agent =====
+ai_agent:
+  max_force_rescan_per_day: 3
+  max_write_ops_per_minute: 10
+  audit_dir: "results/audit"
+  max_tool_calls_per_turn: 5
