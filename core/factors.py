@@ -6,7 +6,6 @@ Values that can't be computed return None (treated as NaN in ranking).
 
 import pandas as pd
 import numpy as np
-from loguru import logger
 
 
 # -- Factor freshness (used to discount stale factors in IC weighting) --
@@ -74,6 +73,9 @@ def compute_all_factors(df_ohlcv, snapshot_row) -> dict[str, float | None]:
     # Fund flow
     factors.update(compute_fund_flow_factors(code))
 
+    # Sentiment
+    factors.update(compute_sentiment_factors(code))
+
     # Filter out None values
     return {k: v for k, v in factors.items() if v is not None and not (isinstance(v, float) and np.isnan(v))}
 
@@ -140,7 +142,7 @@ def compute_quality_factors(code: str) -> dict:
 
 
 def compute_volatility_factors(close: pd.Series) -> dict:
-    """20D vol, 60D vol, Amihud illiquidity, Beta proxy."""
+    """20D vol, 60D vol, vol ratio."""
     factors = {}
     rets = close.pct_change(fill_method=None).dropna()
 
