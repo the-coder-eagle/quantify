@@ -193,6 +193,12 @@ EM_FIELDS = {
     "f2": "price", "f3": "pct_chg", "f4": "change", "f5": "volume",
     "f6": "turnover", "f12": "code", "f14": "name", "f15": "high",
     "f16": "low", "f17": "open", "f18": "prev_close",
+    "f9": "pe_ttm",          # 市盈率(动态)
+    "f23": "pb",             # 市净率
+    "f20": "total_mv",       # 总市值
+    "f21": "circ_mv",        # 流通市值
+    "f8": "turnover_rate",   # 换手率
+    "f10": "volume_ratio",   # 量比
 }
 EM_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -269,7 +275,9 @@ def _fetch_em_snapshot(min_price, max_price=None):
     df = pd.DataFrame(all_rows).rename(columns=EM_FIELDS)
     keep = [v for v in EM_FIELDS.values() if v in df.columns]
     df = df[keep].copy()
-    for c in ["price", "pct_chg", "change", "volume", "turnover", "open", "prev_close", "high", "low"]:
+    for c in ["price", "pct_chg", "change", "volume", "turnover", "open",
+              "prev_close", "high", "low", "pe_ttm", "pb",
+              "total_mv", "circ_mv", "turnover_rate", "volume_ratio"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     if "price" in df.columns:
