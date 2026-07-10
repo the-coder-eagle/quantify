@@ -218,3 +218,23 @@ def rank_all_stocks(
         result["percentile"] = 0.5
 
     return result.sort_values("score", ascending=False).reset_index(drop=True)
+
+
+def load_latest_ranking(rankings_dir: str = "data_cache/rankings") -> pd.DataFrame | None:
+    """Load the most recent cross-section ranking snapshot."""
+    from pathlib import Path
+    import pandas as pd
+
+    base = Path(rankings_dir)
+    if not base.exists():
+        return None
+
+    files = sorted(base.glob("*.parquet"), reverse=True)
+    for f in files:
+        try:
+            df = pd.read_parquet(f)
+            if not df.empty:
+                return df
+        except Exception:
+            continue
+    return None

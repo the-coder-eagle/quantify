@@ -228,12 +228,24 @@ with t2:
 
             left, right = st.columns([0.9, 1.5])
             with left:
-                st.subheader("策略投票")
-                for name, _2 in ALL_STRATEGIES:
-                    s = info["details"].get(name, 0)
-                    icon = {1:"🟢", -1:"🔴", 0:"⚪"}.get(s, "⚪")
-                    label = {1:"买入", -1:"卖出", 0:"观望"}.get(s, "?")
-                    st.write(f"{icon} {name}: {label}")
+                st.subheader("因子评分")
+                if info.get("factor_score") is not None:
+                    fs = info["factor_score"]
+                    pct = info.get("percentile", 0.5)
+                    color = "#ef4444" if fs > 0 else ("#22c55e" if fs < 0 else "#9ca3af")
+                    st.metric("综合因子得分", f"{fs:.4f}", delta=f"全市场前{int(pct*100)}%")
+
+                    # Show available factor values
+                    st.divider()
+                    st.caption("各因子组贡献（因子值 × IC权重）")
+                else:
+                    # Fallback: old strategy voting
+                    st.subheader("策略投票")
+                    for name, _2 in ALL_STRATEGIES:
+                        s = info["details"].get(name, 0)
+                        icon = {1:"🟢", -1:"🔴", 0:"⚪"}.get(s, "⚪")
+                        label = {1:"买入", -1:"卖出", 0:"观望"}.get(s, "?")
+                        st.write(f"{icon} {name}: {label}")
 
                 badge = "badge-buy" if info["signal"] == "BUY" else ("badge-sell" if info["signal"] == "SELL" else "badge-hold")
                 st.markdown(f"**综合: <span class='badge {badge}'>{info['signal']}</span> (置信度 {info['confidence']:.0%})**",

@@ -96,8 +96,108 @@ def run_optimization(force=False):
     scanner.save(results)
     ew.save()
 
+    # 6. Run factor pipeline
+    try:
+        run_factor_pipeline(force=force)
+    except Exception as e:
+        logger.warning(f"Factor pipeline failed (non-blocking): {e}")
+
     logger.info("Optimization complete!")
     return True
+
+
+def run_factor_pipeline(force=False):
+    """Compute factors + cross-section ranking for all stocks in universe.
+
+    Saves to data_cache/rankings/{date}.parquet
+    """
+    logger.info("Starting factor computation pipeline...")
+
+    from core.universe import filter_universe
+    from core.factors import compute_all_factors
+    from core.cross_section import rank_all_stocks
+    import pandas as pd
+    from datetime import date, timedelta
+    from core.data import DataManager
+
+    # 1. Get market snapshot
+    top_n = cfg_get("optimizer", "top_n_stocks", default=100)
+    max_p = app_max_price()
+    min_p = app_min_price()
+
+    market = market_snapshot(limit=top_n, min_price=min_p, max_price=max_p)
+    if market.empty:
+        logger.warning("Market snapshot empty — skipping factor pipeline")
+        return False
+
+    # 2. Filter universe
+    universe = filter_universe(market, min_price=min_p, max_price=max_p)
+    if universe.empty:
+        logger.warning("Universe empty after filtering")
+        return False
+
+    # 3. Load OHLCV for each stock
+    dm = DataManager()
+    end = date.today().strftime("%Y-%m-%d")
+    start = (date.today() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    all_factors = []
+    codes = universe["code"].tolist()
+    for i, code in enumerate(codes):
+        try:
+            df = dm.get(code, start, end)
+            if isinstance(df, pd.DataFrame) and len(df) >= 60:
+                snapshot = universe[universe["code"] == code].iloc[0]
+                factors = compute_all_factors(df, snapshot)
+                factors["code"] = code
+                factors["name"] = snapshot.get("name", "")
+                all_factors.append(factors)
+        except Exception as e:
+            logger.debug(f"Factor compute failed for {code}: {e}")
+
+        if (i + 1) % 20 == 0:
+            logger.info(f"  Factors: {i+1}/{len(codes)}")
+
+    if not all_factors:
+        logger.warning("No factors computed")
+        return False
+
+    # 4. Compute IC weights (from history if available)
+    # For initial run: equal weights, gradually learn IC
+    factor_ic = _load_or_init_ic()
+
+    # 5. Rank all stocks
+    ranking = rank_all_stocks(all_factors, factor_ic)
+
+    # 6. Save
+    out_dir = Path("data_cache/rankings")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ranking.to_parquet(out_dir / f"{date.today().isoformat()}.parquet")
+
+    logger.info(f"Factor pipeline complete: {len(ranking)} stocks ranked")
+    return True
+
+
+def _load_or_init_ic() -> dict[str, float]:
+    """Load IC weights from disk or initialize with equal weights."""
+    ic_path = Path("data_cache/rankings/factor_ic.json")
+    if ic_path.exists():
+        import json
+        with open(ic_path, encoding="utf-8") as f:
+            return json.load(f)
+    # Default equal IC weights for all factor groups
+    return {
+        "ep_ratio": 0.03, "bp_ratio": 0.03,
+        "mom_1m": 0.04, "mom_3m": 0.05, "mom_6m": 0.05, "mom_12m": 0.04,
+        "roe": 0.05, "gross_margin": 0.03, "debt_ratio": 0.02,
+        "vol_20d": 0.03, "vol_60d": 0.02, "vol_ratio": 0.02,
+        "ln_circ_mv": 0.04, "ln_total_mv": 0.03,
+        "north_hold_pct": 0.05, "north_hold_mv": 0.04,
+        "rsi_deviation": 0.03, "macd_hist": 0.03, "bb_position": 0.02,
+        "ma20_slope": 0.03, "volume_ratio": 0.02,
+        "margin_balance": 0.02, "margin_buy": 0.02,
+        "main_net_inflow_pct": 0.03,
+    }
 
 
 def _next_trigger(now: datetime) -> datetime:
