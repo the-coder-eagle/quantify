@@ -182,6 +182,9 @@ def rank_all_stocks(
     # Z-score normalize each factor (with optional sector neutralization)
     halve_stale = stale_factors or set()
     for col in factor_df.columns:
+        # Skip non-numeric columns (metadata like fin_data_date, name, code)
+        if not pd.api.types.is_numeric_dtype(factor_df[col]):
+            continue
         if factor_df[col].notna().sum() >= 10:
             raw = factor_df[col]
             # Sector neutralize first (if map available)
