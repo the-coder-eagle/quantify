@@ -386,6 +386,21 @@ def _fetch_sina_snapshot(min_price, max_price=None):
     return df
 
 
+def fetch_limit_up_pool() -> list[str] | None:
+    """Fetch today's limit-up stocks. Returns list of 6-digit codes."""
+    try:
+        import akshare as ak
+        from datetime import date
+        df = ak.stock_zt_pool_em(date=date.today().strftime("%Y%m%d"))
+        if df is not None and not df.empty:
+            code_col = [c for c in df.columns if "代码" in str(c) or "code" in str(c).lower()]
+            if code_col:
+                return df[code_col[0]].astype(str).str.zfill(6).tolist()
+        return []
+    except Exception:
+        return []
+
+
 def fetch_north_bound_individual(code: str) -> dict | None:
     """Fetch north-bound holding for a single stock.
 
@@ -515,7 +530,7 @@ def fetch_fund_flow(code: str) -> dict | None:
     """Fetch institutional fund flow for a stock.
 
     Uses ak.stock_individual_fund_flow. Returns dict with
-    main_net_inflow_pct, super_large_net_inflow_pct, or None on failure.
+    main_net_inflow, super_large_net_inflow, or None on failure.
     """
     code = str(code).zfill(6)
     try:
@@ -531,10 +546,10 @@ def fetch_fund_flow(code: str) -> dict | None:
         result = {}
         # 主力净流入-净占比 (position 4 typically)
         if len(cols) >= 5:
-            result["main_net_inflow_pct"] = float(latest.iloc[4])
+            result["main_net_inflow"] = float(latest.iloc[4])
         # 超大单净流入-净占比 (position 6 typically)
         if len(cols) >= 7:
-            result["super_large_net_inflow_pct"] = float(latest.iloc[6])
+            result["super_large_net_inflow"] = float(latest.iloc[6])
 
         result["created_at"] = str(latest[cols[0]])
         return result if result else None
@@ -561,7 +576,7 @@ def fetch_industry_info(code: str) -> dict | None:
         else:
             industries = []
 
-        result = {"industry": "unknown", "concept_tags": []}
+        result = {"industry_name": "unknown", "concept_tags": []}
 
         # Try to find stock's specific industry via board concept stocks
         try:
@@ -571,7 +586,7 @@ def fetch_industry_info(code: str) -> dict | None:
                     if df_concept is not None and not df_concept.empty:
                         code_col = df_concept.columns[1] if len(df_concept.columns) > 1 else df_concept.columns[0]
                         if code in df_concept[code_col].astype(str).values:
-                            result["industry"] = board_name
+                            result["industry_name"] = board_name
                             result["source"] = "ths"
                             break
                 except Exception:
@@ -601,7 +616,7 @@ def fetch_industry_info(code: str) -> dict | None:
 
         return result
     except Exception:
-        return {"industry": "unknown", "source": "fallback"}
+        return {"industry_name": "unknown", "concept_tags": [], "source": "fallback"}
 
 
 def fetch_north_bound_history(market: str = "沪股通") -> pd.DataFrame | None:

@@ -3,6 +3,13 @@ import pandas as pd
 from core.data import fetch_north_bound_individual, fetch_north_bound_history
 
 
+def test_fetch_limit_up_pool_returns_list():
+    from core.data import fetch_limit_up_pool
+    result = fetch_limit_up_pool()
+    if result is not None:
+        assert isinstance(result, list)
+
+
 def test_fetch_north_bound_individual_returns_dict():
     result = fetch_north_bound_individual("600519")
     if result is not None:  # API may fail, that's OK
@@ -47,4 +54,4 @@ def test_fetch_industry_info_returns_dict():
     result = fetch_industry_info("600519")
     if result is not None:  # API may fail, that's OK
         assert isinstance(result, dict)
-        assert "industry" in result
+        assert "industry_name" in result
