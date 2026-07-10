@@ -200,14 +200,14 @@ class TestICWeightedScore:
 
     def test_stale_factor_halved(self):
         """When a factor is marked stale, its influence should be reduced."""
-        factors = {"factor_a": 2.0, "factor_b": 2.0}
+        factors = {"factor_a": 2.0, "factor_b": -1.0}
         ic = {"factor_a": 0.1, "factor_b": 0.1}
         halve_stale = {"factor_a": True}
         score_with = ic_weighted_score(factors, ic, halve_stale=halve_stale)
         score_without = ic_weighted_score(factors, ic)
         # With stale halving, the stale factor gets less weight
-        # The score should differ (this is binary, so stale factor's weight is halved)
-        assert score_with != score_without or abs(score_with - score_without) < 2.0
+        # Distinct factor values (2.0 vs -1.0) make the halving detectable
+        assert score_with != score_without and abs(score_with - score_without) < 2.0
 
     def test_min_weight_floor(self):
         """Each factor should have at least min_weight regardless of IC."""

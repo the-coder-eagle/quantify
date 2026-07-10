@@ -240,3 +240,50 @@ class TestAIAndOptimizerIntegration:
         for name, _ in ALL_STRATEGY_CLASSES:
             assert name in PARAM_BOUNDS, f"Missing bounds for {name}"
             assert len(PARAM_BOUNDS[name]) > 0
+
+
+class TestFactorPipeline:
+    """End-to-end factor pipeline: filter universe -> rank stocks -> verify output."""
+
+    def test_full_factor_pipeline_on_synthetic_data(self, tmp_path):
+        """End-to-end: filter -> rank -> verify output structure."""
+        from core.universe import filter_universe
+        from core.cross_section import rank_all_stocks
+
+        rng = np.random.default_rng(42)
+
+        # Synthetic market snapshot (20 stocks)
+        market = pd.DataFrame({
+            "code": [f"{i:06d}" for i in range(100001, 100021)],
+            "name": [f"股票{i}" for i in range(20)],
+            "price": np.linspace(3.0, 11.0, 20),
+            "pe_ttm": rng.uniform(5, 50, 20),
+            "pb": rng.uniform(0.5, 5, 20),
+            "total_mv": rng.uniform(5e9, 5e10, 20),
+            "circ_mv": rng.uniform(2e9, 2e10, 20),
+            "turnover": rng.uniform(1e7, 1e9, 20),
+        })
+
+        # Step 1: Filter universe
+        universe = filter_universe(market)
+        assert len(universe) > 0
+
+        # Step 2: Mock factor data (10 stocks, 3 factors)
+        mock_factors = [
+            {"code": f"{i:06d}", "mom_1m": rng.normal() * 0.1,
+             "rsi_deviation": rng.normal() * 0.3,
+             "roe": rng.uniform(0.05, 0.25)}
+            for i in range(100001, 100011)
+        ]
+
+        # Step 3: Rank all stocks with mock IC values
+        mock_ic = {"mom_1m": 0.05, "rsi_deviation": 0.03, "roe": 0.08}
+        ranking = rank_all_stocks(mock_factors, mock_ic)
+
+        # Step 4: Verify output structure
+        assert len(ranking) == len(mock_factors)
+        assert "code" in ranking.columns
+        assert "score" in ranking.columns
+        assert "percentile" in ranking.columns
+        assert ranking["score"].is_monotonic_decreasing
+        assert ranking["percentile"].between(0, 1).all()

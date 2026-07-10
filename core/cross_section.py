@@ -10,7 +10,6 @@ This module receives factor values from factors.py for all stocks and does:
 
 import pandas as pd
 import numpy as np
-from loguru import logger
 
 
 def zscore_normalize(series: pd.Series, winsorize_pct: float = 0.01) -> pd.Series:
