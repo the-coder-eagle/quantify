@@ -487,7 +487,7 @@ def fetch_financial_indicators(code: str) -> dict | None:
         if df is None or df.empty:
             return None
 
-        latest = df.iloc[0]
+        latest = df.iloc[-1]  # latest row (API returns chronological: oldest first)
         cols = df.columns.tolist()
 
         result = {}
