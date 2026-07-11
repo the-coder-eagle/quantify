@@ -220,7 +220,7 @@ EM_PAGE_SIZE = 100
 def _fetch_em_page(session, page):
     """Fetch one page from Eastmoney API using a shared session."""
     params = {**EM_BASE_PARAMS, "pn": str(page)}
-    for attempt in range(3):
+    for attempt in range(2):  # 2 attempts max (was 3 — saves ~6s when rate-limited)
         try:
             r = session.get(EM_URL, params=params, timeout=15)
             if r.status_code == 429:
@@ -295,23 +295,19 @@ def _fetch_em_snapshot(min_price, max_price=None):
 
 def market_snapshot(limit=500, min_price=3.0, max_price=None):
     """Fetch A-share market snapshot. Eastmoney primary (richer data), Sina fallback."""
-    # Primary: Eastmoney (PE/PB/market-cap fields), retry once on empty
-    for attempt in range(2):
-        try:
-            df = _fetch_em_snapshot(min_price, max_price)
-            if not df.empty:
-                return df.head(limit)
-            if attempt == 0:
-                time.sleep(2)  # brief backoff before retry
-        except Exception as e:
-            logger.warning(f"Eastmoney failed (attempt {attempt+1}): {e}")
-            if attempt == 0:
-                time.sleep(2)
-
-    # Fallback: Sina (capped pages to avoid extreme slowness)
-    logger.warning("Eastmoney unavailable, trying Sina (capped)...")
+    # Primary: Eastmoney (PE/PB/market-cap fields), quick fail on empty
     try:
-        df = _fetch_sina_snapshot(min_price, max_price, max_pages=3)
+        df = _fetch_em_snapshot(min_price, max_price)
+        if not df.empty:
+            return df.head(limit)
+    except Exception as e:
+        logger.warning(f"Eastmoney failed: {e}")
+
+    # Fallback: Sina (pages scaled to requested limit, capped for speed)
+    sina_pages = max(5, min(25, limit // 80 + 5))
+    logger.warning(f"Eastmoney unavailable, trying Sina ({sina_pages} pages)...")
+    try:
+        df = _fetch_sina_snapshot(min_price, max_price, max_pages=sina_pages)
         if not df.empty:
             return df.head(limit)
     except Exception as e:
