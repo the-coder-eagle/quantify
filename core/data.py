@@ -353,7 +353,7 @@ def _fetch_sina_snapshot(min_price, max_price=None, max_pages=None):
         if max_pages is not None and page > max_pages:
             break
         params = {
-            "page": page, "num": 80, "sort": "symbol", "asc": 1,
+            "page": page, "num": 80, "sort": "amount", "asc": 0,
             "node": "hs_a", "symbol": "", "_s_r_a": "init",
         }
         try:
