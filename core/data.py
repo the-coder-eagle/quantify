@@ -393,6 +393,9 @@ def _fetch_sina_snapshot(min_price, max_price=None, max_pages=None):
         df = df[df["pct_chg"].between(-20, 20)]
     if "name" in df.columns:
         df = df[~df["name"].str.contains("ST|退", na=False)]
+    # Filter: only valid A-share stock codes (Sina sometimes returns 92xxxx non-A-share codes)
+    if "code" in df.columns:
+        df = df[df["code"].astype(str).str.match(r'^(0\d{5}|[23]\d{5}|6\d{5}|8\d{5})$', na=False)]
     if "turnover" in df.columns:
         df = df.sort_values("turnover", ascending=False)
     return df
