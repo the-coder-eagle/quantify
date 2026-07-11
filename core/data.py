@@ -294,23 +294,28 @@ def _fetch_em_snapshot(min_price, max_price=None):
 
 
 def market_snapshot(limit=500, min_price=3.0, max_price=None):
-    """Fetch A-share market snapshot. Sina primary (fast-fail), Eastmoney fallback."""
-    # Primary: Sina (fast-fail on 456 — no retry, immediate fallback)
-    try:
-        df = _fetch_sina_snapshot(min_price, max_price)
-        if not df.empty:
-            return df.head(limit)
-    except Exception as e:
-        logger.warning(f"Sina failed: {e}")
+    """Fetch A-share market snapshot. Eastmoney primary (richer data), Sina fallback."""
+    # Primary: Eastmoney (PE/PB/market-cap fields), retry once on empty
+    for attempt in range(2):
+        try:
+            df = _fetch_em_snapshot(min_price, max_price)
+            if not df.empty:
+                return df.head(limit)
+            if attempt == 0:
+                time.sleep(2)  # brief backoff before retry
+        except Exception as e:
+            logger.warning(f"Eastmoney failed (attempt {attempt+1}): {e}")
+            if attempt == 0:
+                time.sleep(2)
 
-    # Fallback: Eastmoney (more reliable, less strict rate-limiting)
-    logger.warning("Sina unavailable, trying Eastmoney...")
+    # Fallback: Sina (capped pages to avoid extreme slowness)
+    logger.warning("Eastmoney unavailable, trying Sina (capped)...")
     try:
-        df = _fetch_em_snapshot(min_price, max_price)
+        df = _fetch_sina_snapshot(min_price, max_price, max_pages=3)
         if not df.empty:
             return df.head(limit)
     except Exception as e:
-        logger.warning(f"Eastmoney fallback failed: {e}")
+        logger.warning(f"Sina fallback failed: {e}")
     return pd.DataFrame()
 
 
@@ -330,17 +335,23 @@ _SINA_HEADERS = {
 }
 
 
-def _fetch_sina_snapshot(min_price, max_price=None):
-    """Fetch ALL A-share snapshots from Sina (paginated).
+def _fetch_sina_snapshot(min_price, max_price=None, max_pages=None):
+    """Fetch A-share snapshots from Sina (paginated).
 
     On HTTP 456 (rate-limit) breaks immediately — Sina's IP ban lasts minutes,
-    retrying is pointless. Caller should fall back to Eastmoney.
+    retrying is pointless.
+
+    Args:
+        max_pages: Cap pages fetched (None = unlimited). Used in fallback mode
+                   to avoid 90-second hangs when Sina is slow.
     """
     session = requests.Session()
     session.headers.update(_SINA_HEADERS)
     all_rows = []
     page = 1
     while True:
+        if max_pages is not None and page > max_pages:
+            break
         params = {
             "page": page, "num": 80, "sort": "symbol", "asc": 1,
             "node": "hs_a", "symbol": "", "_s_r_a": "init",
