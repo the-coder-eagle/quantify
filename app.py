@@ -145,6 +145,14 @@ if ai_key.strip():
 with st.spinner("加载全市场数据..."):
     market = load_market(scan_n, min_p, max_p)
 
+# Surface data-source degradation: when Eastmoney's push2 clist endpoint is
+# unreachable (proxy/VPN routing the 101.226.x segment badly, or IP banned),
+# market_snapshot falls back to Sina, which lacks PE/PB / turnover_rate /
+# market-cap fields. Tell the user instead of silently showing empty columns.
+if not market.empty and "pe_ttm" not in market.columns:
+    st.caption("⚠️ 主数据源 Eastmoney 行情接口不可达，已降级到新浪；PE/PB、换手率、市值字段暂缺。"
+               "如长期不可用，请检查代理/VPN 是否拦截了 push2.eastmoney.com。")
+
 # ============================================================
 # TABS
 # ============================================================

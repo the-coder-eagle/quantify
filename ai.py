@@ -3,7 +3,7 @@ import json, time
 from loguru import logger
 
 class AIClient:
-    def __init__(self, api_key="", base_url="https://api.deepseek.com", model="deepseek-chat", max_retries=3):
+    def __init__(self, api_key="", base_url="https://api.deepseek.com", model="deepseek-v4-flash", max_retries=3):
         from openai import OpenAI
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model; self.max_retries = max_retries

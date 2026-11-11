@@ -21,6 +21,12 @@ venv/
 .vscode/
 .idea/
 
+# Local AI assistant / agent tooling (contains machine-specific paths)
+.claude/
+.codex/
+.superpowers/
+.pytest_cache/
+
 # OS
 .DS_Store
 Thumbs.db

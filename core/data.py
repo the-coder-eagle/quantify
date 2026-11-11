@@ -218,27 +218,47 @@ EM_PAGE_SIZE = 100
 
 
 def _fetch_em_page(session, page):
-    """Fetch one page from Eastmoney API using a shared session."""
+    """Fetch one page from Eastmoney API using a shared session.
+
+    Connection errors (RemoteDisconnected / Connection refused) fail fast
+    with NO retry — push2.eastmoney.com rejects the /clist/ endpoint at the
+    network layer in some environments (proxy/VPN routing the 101.226.x
+    segment badly), and retrying just burns ~3s for the same refusal.
+    Only transient errors (429 / 5xx / JSON parse) get a 2nd attempt.
+    """
     params = {**EM_BASE_PARAMS, "pn": str(page)}
-    for attempt in range(2):  # 2 attempts max (was 3 — saves ~6s when rate-limited)
+    for attempt in range(2):
         try:
             r = session.get(EM_URL, params=params, timeout=15)
-            if r.status_code == 429:
-                backoff = 2 ** (attempt + 1)  # 2, 4, 8s
-                logger.warning(f"Eastmoney rate-limited (HTTP 429) at page {page}, backing off {backoff}s")
-                time.sleep(backoff)
-                continue
-            if r.status_code != 200:
-                if attempt < 2:
-                    time.sleep(1 + attempt)
-                continue
-            data = r.json()
-            if data.get("rc") != 0 or not data.get("data") or not data["data"].get("diff"):
-                return None
-            return data["data"]["diff"]
+        except requests.exceptions.ConnectionError:
+            # Server refuses / drops the connection — retrying won't help.
+            if attempt == 0:
+                logger.debug(f"Eastmoney connection refused at page {page} (push2 unreachable)")
+            return None
         except Exception:
-            if attempt < 2:
+            if attempt < 1:
                 time.sleep(1 + attempt)
+                continue
+            return None
+        if r.status_code == 429:
+            backoff = 2 ** (attempt + 1)  # 2, 4s
+            logger.warning(f"Eastmoney rate-limited (HTTP 429) at page {page}, backing off {backoff}s")
+            time.sleep(backoff)
+            continue
+        if r.status_code != 200:
+            if attempt < 1:
+                time.sleep(1 + attempt)
+                continue
+            return None
+        try:
+            data = r.json()
+        except Exception:
+            if attempt < 1:
+                continue
+            return None
+        if data.get("rc") != 0 or not data.get("data") or not data["data"].get("diff"):
+            return None
+        return data["data"]["diff"]
     return None
 
 
@@ -294,11 +314,18 @@ def _fetch_em_snapshot(min_price, max_price=None):
 
 
 def market_snapshot(limit=500, min_price=3.0, max_price=None):
-    """Fetch A-share market snapshot. Eastmoney primary (richer data), Sina fallback."""
+    """Fetch A-share market snapshot. Eastmoney primary (richer data), Sina fallback.
+
+    Tags the returned DataFrame's ``attrs['source']`` with 'eastmoney' or 'sina'
+    so callers know which fields are present. Sina rows lack pe_ttm / pb /
+    turnover_rate / total_mv / circ_mv — call :func:`enrich_valuation` to fill
+    PE/PB for the top-N candidates when source == 'sina'.
+    """
     # Primary: Eastmoney (PE/PB/market-cap fields), quick fail on empty
     try:
         df = _fetch_em_snapshot(min_price, max_price)
         if not df.empty:
+            df.attrs["source"] = "eastmoney"
             return df.head(limit)
     except Exception as e:
         logger.warning(f"Eastmoney failed: {e}")
@@ -309,6 +336,7 @@ def market_snapshot(limit=500, min_price=3.0, max_price=None):
     try:
         df = _fetch_sina_snapshot(min_price, max_price, max_pages=sina_pages)
         if not df.empty:
+            df.attrs["source"] = "sina"
             return df.head(limit)
     except Exception as e:
         logger.warning(f"Sina fallback failed: {e}")
@@ -619,3 +647,80 @@ def fetch_north_bound_history(market: str = "沪股通") -> pd.DataFrame | None:
         return df
     except Exception:
         return None
+
+
+def fetch_valuation_baidu(code: str) -> dict | None:
+    """Fetch latest PE(TTM) and PB for a stock from the Baidu valuation source.
+
+    Per-stock (2 API calls). Used to enrich Sina snapshot rows — which lack
+    valuation fields — when Eastmoney's bulk push2 clist endpoint is
+    unreachable. ~0.4-0.9s per call; safe to run concurrently.
+
+    Returns {"pe_ttm": float, "pb": float} (keys present only if fetched),
+    or None if neither could be fetched.
+    """
+    code = str(code).zfill(6)
+    import akshare as ak
+    result = {}
+    for key, indicator in [("pe_ttm", "市盈率(TTM)"), ("pb", "市净率")]:
+        try:
+            s = ak.stock_zh_valuation_baidu(symbol=code, indicator=indicator, period="近一年")
+            if s is not None and not s.empty:
+                v = float(s.tail(1)["value"].iloc[0])
+                if v == v:  # not NaN
+                    result[key] = v
+        except Exception:
+            pass
+    return result if result else None
+
+
+def enrich_valuation(df: pd.DataFrame, top_n: int = 30, workers: int = 8) -> pd.DataFrame:
+    """Enrich the top-N most-liquid rows with PE(TTM)/PB from the Baidu source.
+
+    Full-market per-stock calls would be too slow (5000+ × 2 calls), so only
+    the top-N rows by turnover are enriched — enough to rank candidates and
+    allocate capital in quick_scan. Rows not enriched keep NaN; ranking
+    functions treat NaN as worst (na_option='bottom').
+
+    Safe to call on an Eastmoney-sourced df too (it already has pe_ttm/pb,
+    so isna() selects zero rows and this is a no-op). Modifies df in place
+    and returns it.
+    """
+    if df is None or df.empty:
+        return df
+    if "pe_ttm" not in df.columns:
+        df["pe_ttm"] = np.nan
+    if "pb" not in df.columns:
+        df["pb"] = np.nan
+    missing = df.index[df["pe_ttm"].isna()].tolist()
+    if not missing:
+        return df
+    if "turnover" in df.columns:
+        candidates = df.loc[missing].nlargest(top_n, "turnover")
+    else:
+        candidates = df.loc[missing].head(top_n)
+    if candidates.empty or "code" not in candidates.columns:
+        return df
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    code_col = candidates["code"].astype(str).str.zfill(6)
+    # Map code -> list of df indices (a code may appear on multiple rows in theory)
+    idx_by_code: dict[str, list] = {}
+    for idx, c in zip(candidates.index, code_col):
+        idx_by_code.setdefault(c, []).append(idx)
+
+    def _one(c):
+        return c, fetch_valuation_baidu(c)
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(_one, c) for c in idx_by_code]
+        for f in as_completed(futs):
+            c, val = f.result()
+            if not val:
+                continue
+            for idx in idx_by_code.get(c, []):
+                if "pe_ttm" in val:
+                    df.at[idx, "pe_ttm"] = val["pe_ttm"]
+                if "pb" in val:
+                    df.at[idx, "pb"] = val["pb"]
+    return df
