@@ -10,11 +10,11 @@ Usage:
     cal = TradingCalendar()
     if cal.should_run():
         scanner = ParamScanner()
-        results = scanner.scan_all(codes, stock_data)
+        results = scanner.scan_all(stock_data)
         scanner.save(results)
 
         ew = EnsembleWeight()
-        weights = ew.update(stock_data, results)
+        weights = ew.update({"strategy": [0.01, -0.01, 0.02, 0.0, 0.01]})
 """
 
 import os, json, time
@@ -177,7 +177,7 @@ class ParamScanner:
                 if trades == 0:
                     continue
 
-                score = self._compute_score(sharpe, -max_dd, win_rate, pf)
+                score = self._compute_score(sharpe, max_dd, win_rate, pf)
 
                 results.append({
                     "params": params,
@@ -313,6 +313,10 @@ class EnsembleWeight:
         for name, returns in recent_performance.items():
             sharpe_scores[name] = self._rolling_sharpe(returns)
 
+        return self.update_from_sharpes(sharpe_scores)
+
+    def update_from_sharpes(self, sharpe_scores: dict[str, float]) -> dict[str, float]:
+        """Weight precomputed Sharpe estimates, not samples of daily returns."""
         if not sharpe_scores:
             # Fall back to equal weights
             n = len(ALL_STRATEGY_CLASSES)

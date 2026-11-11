@@ -86,10 +86,13 @@ def walk_forward(strategy_or_cls, df, param_grid=None, train_months=24, test_mon
         logger.warning("walk_forward: no param_grid available, returning None")
         return None
 
+    if train_months <= 0 or test_months <= 0:
+        raise ValueError("train_months and test_months must be positive")
+
     results = []; n = len(df)
     start_idx = train_months * 21  # ~21 trading days/month
     test_len = test_months * 21
-    while start_idx + test_len < n:
+    while start_idx + test_len <= n:
         train = df.iloc[:start_idx]; test = df.iloc[start_idx:start_idx + test_len]
         best_params = None; best_sharpe = -999
         from itertools import product
@@ -105,7 +108,10 @@ def walk_forward(strategy_or_cls, df, param_grid=None, train_months=24, test_mon
             results.append(r)
         start_idx += test_len
     if not results: return None
-    combined_eq = pd.concat([r.equity for r in results])
+    # Each window starts flat; compound its net returns onto prior capital.
+    # This preserves the existing independent-window execution convention.
+    combined_returns = pd.concat([r.returns for r in results])
+    combined_eq = (1 + combined_returns).cumprod()
     combined_eq = combined_eq[~combined_eq.index.duplicated(keep="first")]
     return {"equity": combined_eq, "n_windows": len(results)}
 
@@ -121,17 +127,31 @@ def _profit_factor(tr): c=tr.dropna(); g=c[c>0].sum(); l=abs(c[c<0].sum()); retu
 def _metrics(eq, ret, bench_ret, rf): return {"sharpe":_sharpe(ret,rf),"sortino":_sortino(ret,rf),"calmar":_annual_return(eq)/abs(_max_dd(eq)) if _max_dd(eq)!=0 else 0}
 
 def _extract_trades(positions, returns):
-    trades=[]; i=0
-    while i<len(positions):
-        if positions.iloc[i]==0: i+=1; continue
-        direction=positions.iloc[i]; entry=i
-        for j in range(i+1,len(positions)):
-            if positions.iloc[j]!=direction: exit=j; break
-        else: exit=len(positions)-1
-        tr=(1+returns.iloc[entry:exit+1]*direction).prod()-1
-        trades.append({"entry":positions.index[entry],"exit":positions.index[exit],"direction":int(direction),"return":tr,"days":exit-entry})
-        i=exit+1
-    return pd.DataFrame(trades) if trades else pd.DataFrame()
+    """Group nonzero position runs; returns belong only to held bars.
+
+    ``exit`` is the last held bar (inclusive), and ``days`` counts held bars.
+    Returns are gross of transaction costs, including an open final run.
+    """
+    trades = []
+    i = 0
+    while i < len(positions):
+        if positions.iloc[i] == 0:
+            i += 1
+            continue
+        direction = positions.iloc[i]
+        entry = i
+        i += 1
+        while i < len(positions) and positions.iloc[i] == direction:
+            i += 1
+        tr = (1 + returns.iloc[entry:i] * direction).prod() - 1
+        trades.append({
+            "entry": positions.index[entry],
+            "exit": positions.index[i - 1],
+            "direction": int(direction),
+            "return": tr,
+            "days": i - entry,
+        })
+    return pd.DataFrame(trades)
 
 def oos_quality_check(strategy, df, train_ratio=0.7):
     """Split data into in-sample / out-of-sample and evaluate strategy on both.

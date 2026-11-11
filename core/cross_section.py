@@ -94,6 +94,8 @@ def compute_rank_ic(
     rank_fv = fv.rank()
     rank_fr = fr.rank()
 
+    if rank_fv.nunique() < 2 or rank_fr.nunique() < 2:
+        return 0.0
     return float(rank_fv.corr(rank_fr))
 
 
@@ -109,6 +111,7 @@ def ic_weighted_score(
     A ``min_weight`` floor is applied. Raw weights are softmax-normalised
     (temperature T=0.5), then the score is the dot product of those weights
     with the stock's Z-scored factor values (clipped to [-3, 3]).
+    Negative IC reverses the factor direction; zero IC keeps the raw factor direction.
 
     Args:
         stock_factors: {factor_name: z-scored value} for one stock
@@ -141,7 +144,8 @@ def ic_weighted_score(
         if name in stock_factors and stock_factors[name] is not None:
             # Cap extreme Z-scores to avoid a single factor dominating
             zv = np.clip(float(stock_factors[name]), -3.0, 3.0)
-            score += w_array[i] * zv
+            direction = -1.0 if factor_ic[name] < 0 else 1.0
+            score += w_array[i] * zv * direction
 
     return round(float(score), 6)
 

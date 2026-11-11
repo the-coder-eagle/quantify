@@ -78,7 +78,7 @@ def run_optimization(force=False):
 
     # 4. Compute ensemble weights from scan results
     ew = EnsembleWeight()
-    # Build per-strategy returns from scan results
+    # These are in-sample Sharpe estimates, not a daily return series.
     perf = {}
     for name, _ in ALL_STRATEGY_CLASSES:
         # Use average Sharpe across all stocks as the performance signal
@@ -87,9 +87,9 @@ def run_optimization(force=False):
             top = info.get("strategies", {}).get(name, [])
             if top:
                 sharpes.append(top[0].get("sharpe", 0))
-        perf[name] = [np.mean(sharpes)] if sharpes else [0.0]
+        perf[name] = float(np.mean(sharpes)) if sharpes else 0.0
 
-    weights = ew.update(perf)
+    weights = ew.update_from_sharpes(perf)
     logger.info(f"Ensemble weights: {json.dumps(weights, ensure_ascii=False)}")
 
     # 5. Save results
