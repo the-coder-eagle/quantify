@@ -70,7 +70,7 @@ class TestToolRegistry:
         tr = ToolRegistry()
         result = tr._adjust_strategy_params("趋势-均线", {"fast": 15, "slow": 45},
                                             override_dir=str(tmp_path))
-        assert result.get("status") == "applied"
+        assert result.get("status") == "saved"
         assert result.get("bounds_checked") is True
         # Verify file was written to tmp_path
         override_file = tmp_path / "ai_overrides.json"
@@ -120,3 +120,82 @@ class TestRateLimiter:
             assert rl.check_rescan()
         # 4th should fail
         assert not rl.check_rescan()
+
+
+class TestAgentInputSafety:
+    @staticmethod
+    def make_agent(tmp_path, monkeypatch, response=""):
+        from unittest.mock import Mock
+        monkeypatch.chdir(tmp_path)
+        client = Mock()
+        client.chat.side_effect = [response, "完成"]
+        return AIAgent(client)
+
+    def test_tool_limit_is_enforced(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        from core.ai_agent import MAX_TOOL_CALLS_PER_TURN
+        call = '<function_call>{"name":"get_current_params","arguments":{}}</function_call>'
+        agent = self.make_agent(tmp_path, monkeypatch, call * 12)
+        agent.execute_tool = Mock(return_value={"ok": True})
+        response = agent.chat("test")
+        assert agent.execute_tool.call_count == MAX_TOOL_CALLS_PER_TURN
+        assert "跳过" in response
+
+    def test_malformed_calls_do_not_crash(self, tmp_path, monkeypatch):
+        response = ('<function_call>[]</function_call>'
+                    '<function_call>{"name":[]}</function_call>'
+                    '<function_call>{"name":"get_current_params","arguments":[]}</function_call>'
+                    '<function_call>not json</function_call>')
+        agent = self.make_agent(tmp_path, monkeypatch, response)
+        assert "解析失败" in agent.chat("test")
+
+    def test_model_cannot_override_output_directory(self, tmp_path, monkeypatch):
+        agent = self.make_agent(tmp_path, monkeypatch)
+        target = tmp_path / "untrusted"
+        result = agent.execute_tool("add_to_watchlist",
+                                    {"code": "600519", "override_dir": str(target)})
+        assert "error" in result
+        assert not target.exists()
+
+
+class TestStrictNumericValidation:
+    def test_invalid_weights_do_not_write(self, tmp_path):
+        tr = ToolRegistry()
+        for invalid in [float("nan"), float("inf"), True, "0.2", None]:
+            weights = dict.fromkeys(PARAM_BOUNDS, 0.2)
+            weights["动量"] = invalid
+            assert "error" in tr._adjust_ensemble_weights(weights, override_dir=str(tmp_path))
+        assert not (tmp_path / "ai_overrides.json").exists()
+
+    def test_weights_require_complete_known_strategy_set(self, tmp_path):
+        tr = ToolRegistry()
+        for weights in [{"fake": 1.0}, {"趋势-均线": 0.5, "动量": 0.5}, []]:
+            assert "error" in tr._adjust_ensemble_weights(weights, override_dir=str(tmp_path))
+        assert not (tmp_path / "ai_overrides.json").exists()
+
+    def test_fractional_window_and_invalid_params_do_not_write(self, tmp_path):
+        tr = ToolRegistry()
+        for params in [{"fast": 10.5}, {"fast": True}, {"fast": float("nan")}, [], {}]:
+            assert "error" in tr._adjust_strategy_params(
+                "趋势-均线", params, override_dir=str(tmp_path))
+        assert not (tmp_path / "ai_overrides.json").exists()
+
+    def test_valid_weights_are_saved_but_not_marked_active(self, tmp_path):
+        tr = ToolRegistry()
+        result = tr._adjust_ensemble_weights(dict.fromkeys(PARAM_BOUNDS, 0.2),
+                                             override_dir=str(tmp_path))
+        assert result["active"] is False
+        assert (tmp_path / "ai_overrides.json").exists()
+
+    def test_weights_enforce_change_limit_without_optimizer_results(self, tmp_path):
+        weights = dict.fromkeys(PARAM_BOUNDS, 0.1)
+        weights["动量"] = 0.6
+        result = ToolRegistry()._adjust_ensemble_weights(weights, override_dir=str(tmp_path))
+        assert result.get("rejected") is True
+        assert not (tmp_path / "ai_overrides.json").exists()
+
+    def test_weights_reject_near_but_incorrect_sum(self, tmp_path):
+        weights = dict.fromkeys(PARAM_BOUNDS, 0.2)
+        weights["动量"] = 0.205
+        assert "error" in ToolRegistry()._adjust_ensemble_weights(
+            weights, override_dir=str(tmp_path))

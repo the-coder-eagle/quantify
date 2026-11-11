@@ -1,15 +1,17 @@
 """
-AI Agent with sandboxed tool access for strategy optimization.
+AI Agent with application-level tool validation for strategy research.
 
-The AI can call read tools (backtest, market data, performance) freely,
-and write tools (adjust params/weights) bounded by hardcoded safety limits.
+The AI can call named read tools (backtest, market data, performance),
+and save parameter/weight proposals bounded by hardcoded validation limits.
 All write operations are audit-logged to results/audit/{date}.jsonl.
 
-Tools the AI CANNOT access: filesystem writes, real trading, network,
-parameter bound bypass, audit log deletion.
+No arbitrary filesystem or network tool, real-trading tool, or audit deletion
+tool is exposed. Named tools can fetch market data and write to fixed paths.
+This is not an operating-system security sandbox.
 """
 
 import json, time, os
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -231,17 +233,22 @@ class ToolRegistry:
 
     def _adjust_strategy_params(self, strategy_name: str, params: dict,
                                 reason: str = "", override_dir: str = None) -> dict:
-        """Adjust strategy parameters. Params are validated against safety bounds."""
+        """Save a strategy parameter proposal; not automatically activated."""
         bounds = PARAM_BOUNDS.get(strategy_name)
         if bounds is None:
             return {"error": f"Unknown strategy: {strategy_name}. Valid: {list(PARAM_BOUNDS.keys())}"}
+
+        if not isinstance(params, dict) or not params:
+            return {"error": "Params must be a nonempty object"}
 
         # Validate each parameter against bounds
         for key, val in params.items():
             if key not in bounds:
                 return {"error": f"Unknown param '{key}' for {strategy_name}. Valid: {list(bounds.keys())}"}
-            if not isinstance(val, (int, float)):
+            if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val):
                 return {"error": f"Param '{key}={val}' must be numeric, got {type(val).__name__}"}
+            if key in {"fast", "slow", "signal", "lookback", "bb_window"} and not isinstance(val, int):
+                return {"error": f"Param '{key}' must be an integer"}
             lo, hi = bounds[key]
             if not (lo <= val <= hi):
                 return {
@@ -265,7 +272,9 @@ class ToolRegistry:
             json.dump(overrides, f, ensure_ascii=False, indent=2)
 
         return {
-            "status": "applied",
+            "status": "saved",
+            "active": False,
+            "message": "Saved as an override proposal; runtime loaders do not apply AI overrides.",
             "strategy": strategy_name,
             "params": params,
             "bounds_checked": True,
@@ -273,12 +282,18 @@ class ToolRegistry:
 
     def _adjust_ensemble_weights(self, weights: dict[str, float],
                                  reason: str = "", override_dir: str = None) -> dict:
-        """Adjust ensemble strategy voting weights. Sum must = 1.0, each >= 5%, max change <= 30%."""
+        """Save inactive weight proposals: sum = 1.0, each >= 5%, max change <= 30%."""
         from .optimizer import load_latest_weights
+
+        if not isinstance(weights, dict) or set(weights) != set(PARAM_BOUNDS):
+            return {"error": "Weights must include exactly all five known strategies"}
+        if any(isinstance(w, bool) or not isinstance(w, (int, float))
+               or not math.isfinite(w) for w in weights.values()):
+            return {"error": "Weights must be finite numbers"}
 
         # Validate sum
         total = sum(weights.values())
-        if abs(total - 1.0) > 0.01:
+        if not math.isclose(total, 1.0, rel_tol=0, abs_tol=1e-8):
             return {"error": f"Weights must sum to 1.0, got {total:.3f}"}
 
         # Validate individual weights
@@ -288,7 +303,7 @@ class ToolRegistry:
 
         # Check max change vs current (respect override_dir for testability)
         results_dir = override_dir if override_dir else "results/optimizer"
-        current = load_latest_weights(results_dir=results_dir) or {}
+        current = load_latest_weights(results_dir=results_dir) or dict.fromkeys(PARAM_BOUNDS, 0.2)
         if current:
             for name, w in weights.items():
                 prev = current.get(name, 0.2)
@@ -313,7 +328,9 @@ class ToolRegistry:
             json.dump(overrides, f, ensure_ascii=False, indent=2)
 
         return {
-            "status": "applied",
+            "status": "saved",
+            "active": False,
+            "message": "Saved as an override proposal; runtime loaders do not apply AI overrides.",
             "weights": weights,
             "max_change_checked": True,
             "min_weight_checked": True,
@@ -394,6 +411,13 @@ class AIAgent:
 
     def execute_tool(self, tool_name: str, arguments: dict, reason: str = "") -> dict:
         """Execute a tool with permission and bounds checking. Returns result dict."""
+        if not isinstance(tool_name, str):
+            return {"error": "Tool name must be a string"}
+        if not isinstance(arguments, dict):
+            return {"error": "Tool arguments must be an object"}
+        # override_dir is only a trusted Python/test hook, never model input.
+        if "override_dir" in arguments:
+            return {"error": "Tool callers cannot choose filesystem destinations"}
         tool = self.tools.get_tool(tool_name)
         if tool is None:
             return {"error": f"Unknown tool: {tool_name}"}
@@ -439,10 +463,13 @@ class AIAgent:
             text_response = parts[0].strip()
             tool_results = []
 
-            for part in parts[1:]:
+            for part in parts[1:MAX_TOOL_CALLS_PER_TURN + 1]:
                 call_text = part.split("</function_call>")[0].strip()
                 try:
                     call = json.loads(call_text)
+                    if not isinstance(call, dict):
+                        tool_results.append("[解析失败] Tool call must be an object")
+                        continue
                     name = call.get("name", "")
                     args = call.get("arguments", {})
                     reason = call.get("reason", "")
@@ -450,6 +477,9 @@ class AIAgent:
                     tool_results.append(f"[工具: {name}] {json.dumps(result, ensure_ascii=False)}")
                 except json.JSONDecodeError:
                     tool_results.append(f"[解析失败] {call_text[:200]}")
+
+            if len(parts) - 1 > MAX_TOOL_CALLS_PER_TURN:
+                tool_results.append(f"[限制] 最多执行{MAX_TOOL_CALLS_PER_TURN}个工具，已跳过其余调用")
 
             if tool_results:
                 # Send tool results back to AI for final response

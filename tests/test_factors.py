@@ -6,6 +6,26 @@ from core.data import fetch_north_bound_individual, fetch_north_bound_history
 from core.universe import filter_universe
 
 
+@pytest.fixture(autouse=True)
+def offline_factor_sources(request, monkeypatch):
+    """Factor unit tests must not depend on live APIs or local data caches."""
+    if request.node.get_closest_marker("live"):
+        return
+    from core import data
+    import news
+    samples = {
+        "fetch_financial_indicators": {"roe": 20, "eps": 2, "data_date": "2026-01-01"},
+        "fetch_north_bound_individual": {"hold_pct": 3},
+        "fetch_margin_data": {"margin_balance": 1000, "margin_buy": 100},
+        "fetch_fund_flow": {"main_net_inflow": 100, "super_large_net_inflow": 50},
+    }
+    for name, sample in samples.items():
+        monkeypatch.setattr(data, name, lambda code, sample=sample:
+                            sample.copy() if code == "600519" else None)
+    monkeypatch.setattr(news, "fetch", lambda *args, **kwargs: [])
+
+
+@pytest.mark.live
 def test_fetch_limit_up_pool_returns_list():
     from core.data import fetch_limit_up_pool
     result = fetch_limit_up_pool()
@@ -13,6 +33,7 @@ def test_fetch_limit_up_pool_returns_list():
         assert isinstance(result, list)
 
 
+@pytest.mark.live
 def test_fetch_north_bound_individual_returns_dict():
     result = fetch_north_bound_individual("600519")
     if result is not None:  # API may fail, that's OK
@@ -20,6 +41,7 @@ def test_fetch_north_bound_individual_returns_dict():
         assert "hold_pct" in result
 
 
+@pytest.mark.live
 def test_fetch_north_bound_history_returns_dataframe():
     df = fetch_north_bound_history()
     if df is not None and not df.empty:
@@ -27,6 +49,7 @@ def test_fetch_north_bound_history_returns_dataframe():
         assert "date" in df.columns or df.index.name == "date"
 
 
+@pytest.mark.live
 def test_fetch_margin_data_returns_dict():
     from core.data import fetch_margin_data
     result = fetch_margin_data("600519")
@@ -37,6 +60,7 @@ def test_fetch_margin_data_returns_dict():
         assert "created_at" in result
 
 
+@pytest.mark.live
 def test_fetch_financial_indicators_returns_dict():
     from core.data import fetch_financial_indicators
     result = fetch_financial_indicators("600519")
@@ -45,6 +69,7 @@ def test_fetch_financial_indicators_returns_dict():
         assert "roe" in result
 
 
+@pytest.mark.live
 def test_fetch_fund_flow_returns_dict():
     from core.data import fetch_fund_flow
     result = fetch_fund_flow("600519")
@@ -52,6 +77,7 @@ def test_fetch_fund_flow_returns_dict():
         assert isinstance(result, dict)
 
 
+@pytest.mark.live
 def test_fetch_industry_info_returns_dict():
     from core.data import fetch_industry_info
     result = fetch_industry_info("600519")
@@ -329,7 +355,8 @@ class TestQualityFactors:
     def test_returns_dict(self):
         from core.factors import compute_quality_factors
         result = compute_quality_factors("600519")
-        assert isinstance(result, dict)
+        assert result["roe"] == 0.2
+        assert result["eps"] == 2
 
     def test_handles_invalid_code(self):
         from core.factors import compute_quality_factors
@@ -341,7 +368,7 @@ class TestNorthBoundFactors:
     def test_returns_dict(self):
         from core.factors import compute_north_bound_factors
         result = compute_north_bound_factors("600519")
-        assert isinstance(result, dict)
+        assert result == {"north_hold_pct": 3.0}
 
     def test_invalid_code_no_crash(self):
         from core.factors import compute_north_bound_factors
@@ -353,14 +380,14 @@ class TestMarginFactors:
     def test_returns_dict(self):
         from core.factors import compute_margin_factors
         result = compute_margin_factors("600519")
-        assert isinstance(result, dict)
+        assert result == {"margin_balance": 1000.0, "margin_buy": 100.0}
 
 
 class TestFundFlowFactors:
     def test_returns_dict(self):
         from core.factors import compute_fund_flow_factors
         result = compute_fund_flow_factors("600519")
-        assert isinstance(result, dict)
+        assert result == {"main_net_inflow": 100.0, "super_large_net_inflow": 50.0}
 
 
 class TestSectorMomentumFactors:

@@ -31,3 +31,23 @@ def sample_ohlcv() -> pd.DataFrame:
 def sample_ohlcv_short() -> pd.DataFrame:
     """30-row synthetic OHLCV — triggers insufficient-data paths."""
     return _make_ohlcv(30)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-live", action="store_true", default=False,
+        help="Run optional tests that contact live third-party market services",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live: optional live market-service smoke test")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-live"):
+        return
+    skip_live = pytest.mark.skip(reason="Live market check: opt in with --run-live")
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip_live)

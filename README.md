@@ -1,93 +1,69 @@
-# Quantify — A股量化交易系统
+# Quantify — A股量化分析与模拟回测
 
-基于 Python 的 A 股量化交易学习系统，从数据获取到模拟交易，五个阶段循序渐进。
+基于 Python、Streamlit 和 AkShare 的学习项目，提供行情筛选、技术因子分析、策略回测、参数优化和 AI 辅助分析。**不应将分析信号视为投资建议或直接用于实盘。**
 
-## 🚀 一键启动（最简单）
+## 启动
 
-**双击 `start.bat`**，自动清理端口、激活环境、打开浏览器。
-
-会弹出地址：**http://localhost:57921**
-
-## 手动启动
+要求 Python 3.10 或更高版本。以下命令在仓库根目录执行：
 
 ```bash
-# 安装依赖
-pip install -r requirements-lock.txt
+python -m venv .venv
+# macOS / Linux
+source .venv/bin/activate
+# Windows PowerShell 改用：
+# .venv\Scripts\Activate.ps1
 
-# Web 前端
-cd quantify
-source .venv/Scripts/activate
-streamlit run app.py
-
-# 运行测试
-pytest tests/ -v
-
-# 命令行信号
-python daily_signal.py
+python -m pip install -r requirements-lock.txt
+python -m streamlit run app.py --server.port 57921
 ```
 
-## 五个阶段
+浏览器访问 http://localhost:57921 。Windows 用户也可以查看并运行仓库中的 `start.bat`。
 
-按顺序打开 `notebooks/` 中的 `.ipynb` 文件：
+## 测试
 
-| 顺序 | 文件 | 学什么 | 预计时间 |
-|---|---|---|---|
-| 1 | `01_data_exploration.ipynb` | 获取真实A股数据，画图，分析收益 | 30分钟 |
-| 2 | `02_first_strategy.ipynb` | 写第一个交易策略（均线交叉） | 45分钟 |
-| 3 | `03_backtest_demo.ipynb` | 回测看策略能不能赚钱 | 45分钟 |
-| 4 | `04_risk_analysis.ipynb` | 控制风险，止损，仓位管理 | 40分钟 |
-| 5 | `05_paper_trading.ipynb` | 模拟真实交易，对比回测差距 | 30分钟 |
-
-## 最简单的入门
-
-打开 Jupyter 后，打开 `01_data_exploration.ipynb`，点击顶部的 **Run** → **Run All Cells**，等待执行完成，就能看到：
-
-- 贵州茅台、五粮液的价格走势图
-- 每日收益率分布
-- 各股票之间的相关性热力图
-
-不需要改任何代码，直接运行就能看到结果。
-
-## 核心概念速查
-
-| 概念 | 一句话解释 | 在哪里学 |
-|---|---|---|
-| OHLCV | 开盘/最高/最低/收盘/成交量 | Phase 1 |
-| 前复权 | 调整历史价格，使分红和拆股不影响回测 | Phase 1 |
-| 前视偏差 | 用"未来的信息"去交易过去 — 最常见的错误 | Phase 2 |
-| 均线交叉 | 快线穿越慢线 = 趋势变化信号 | Phase 2 |
-| 回测 | 在历史数据上模拟策略，看能不能赚钱 | Phase 3 |
-| Sharpe比率 | 每承担1%风险能赚多少收益 | Phase 3 |
-| 最大回撤 | 从最高点到最低点的最大跌幅 | Phase 3 |
-| 协整 | 两个股票价格的长期均衡关系 | Phase 4 |
-| 凯利公式 | 算出每次该投多少钱的最优比例 | Phase 4 |
-| 止损 | 亏到一定比例就卖，控制损失 | Phase 4 |
-| 纸交易 | 逐天模拟真实买卖，包含手续费/整手/T+1 | Phase 5 |
-
-## 项目结构
-
-```
-quantify/
-├── data/          数据获取和存储（akshare + Parquet缓存）
-├── strategies/    5种交易策略
-├── backtest/      回测引擎 + 12个评价指标
-├── risk/          仓位管理 + 止损 + 组合风控
-├── execution/     模拟交易（订单/成交/结算）
-├── utils/         技术指标 + 工具函数
-├── notebooks/     5个交互式学习笔记本
-└── config/        配置文件
+```bash
+python -m pytest tests/ -q
 ```
 
-## 常见问题
+默认测试使用合成数据与替身，并跳过 7 项在线行情检查，不验证真实 AI 服务。在线行情检查需显式开启，可能受网络、限流和缓存影响：
 
-**Q: 为什么数据拉不到？**
-A: 项目中使用了新浪和东方财富两个数据源，新浪更稳定。如果拉不到，等几分钟再试。
+```bash
+python -m pytest tests/ -q --run-live -m live
+```
 
-**Q: 为什么策略是亏钱的？**
-A: 这很正常！大多数"简单"策略在真实市场中都亏钱。你的目标是理解原理，不是找到圣杯。
+这些在线检查允许 API 返回空结果，测试通过不代表行情源可用或数据新鲜。
 
-**Q: 我能直接用这些策略实盘交易吗？**
-A: 不建议。这个项目是学习用的，实盘前还需要大量优化和风控。
+## 当前项目结构
 
-**Q: 为什么回测赚钱，模拟交易亏更多？**
-A: 模拟交易包含了真实约束：100股的整数倍、T+1结算、现金管理。这3-5%的差距就是"现实摩擦"。
+- `app.py`：Streamlit 分析界面。
+- `core/data.py`：行情获取与缓存。
+- `core/factors.py`、`core/cross_section.py`、`core/analyzer.py`：因子与选股分析。
+- `core/strategies.py`、`core/backtest.py`：传统策略与向量化回测。
+- `core/optimizer.py`：参数搜索、策略权重与优化结果读取。
+- `core/risk.py`、`core/regime.py`：风险辅助计算与市场状态。
+- `core/ai_agent.py`、`ai.py`：AI 客户端与受限工具调用。
+- `config/settings.yaml`：应用配置。
+- `scheduler.py`、`daily_report.py`、`quick_scan.py`：调度、报告与扫描入口。
+- `tests/`：自动化测试。
+
+## AI 工具的边界
+
+每次对话最多执行 5 个工具调用；写入工具另有频率限制。模型不能指定输出目录。保存的参数提案必须符合已定义的数值范围，窗口长度必须为整数；权重必须覆盖全部五种已知策略、总和为 1，且每项不低于 5%。
+
+AI 参数和权重修改会保存到 `results/optimizer/ai_overrides.json`，**目前运行时加载器不会自动应用此文件**。工具返回 `active: false`，不要把“保存成功”当成分析或回测参数已生效。审计记录位于 `results/audit/`。这些应用层限制不是隔离操作系统的安全沙箱。
+
+## 回测限制
+
+目前回测是简化的向量化模型：
+
+- 策略信号滞后一根 K 线，使用收盘收益率计算。
+- 计入比例佣金、滑点与卖出印花税；不模拟逐笔撮合、资金余额、100 股整手、最低佣金或完整 T+1 约束。
+- 涨跌幅被统一截断至配置范围，不等同于真实涨跌停无法成交的处理，也不覆盖不同板块和 ST 规则。
+- 交易胜率等统计使用毛收益，包含末尾未平仓区间；权益收益扣除比例成本。
+- Walk-forward 测试窗口独立从空仓开始，窗口内重新预热，净收益连续复利拼接；不代表跨窗口连续持仓。
+
+因此收益、回撤与交易统计仅用于研究比较，不应视为可兑现的实盘表现。
+
+## 行情故障排查
+
+行情依赖第三方服务，可能遇到限流、网络错误或数据延迟。先查看日志和缓存日期，稍后重试；不要把缺失行情解释为没有风险或没有交易机会。在线服务及 AI 配置请参照代码与 `config/`，不要将密钥提交到仓库。
